@@ -1,0 +1,52 @@
+$background: #101a23;
+$surface: #172631;
+$accent: #52c7b8;
+$muted: #9db0be;
+$error: #ff9f9f;
+Screen { background: $background; color: #ecf3f4; }
+#brand { height: auto; min-height: 2; padding: 0 2; background: $surface; color: $accent; text-style: bold; }
+#demo-banner { height: auto; padding: 0 2; color: $accent; text-style: bold; }
+#content { height: 1fr; padding: 1 2; }
+Static { height: auto; }
+Label { height: auto; margin-top: 1; }
+Input { margin-bottom: 1; }
+TextArea { height: 6; min-height: 4; margin-bottom: 1; border: solid $muted; }
+#body { height: 12; }
+Button { width: 100%; height: 3; margin-bottom: 1; }
+Button:focus, Input:focus, TextArea:focus, Select:focus { border: double $accent; text-style: bold; }
+ListView { height: 14; min-height: 5; margin: 1 0; border: solid $muted; background: $surface; }
+#menu { height: 12; }
+ListItem { height: auto; min-height: 2; padding: 0 1; }
+ListItem > Label { margin: 0; }
+RecordRow { min-height: 4; padding-bottom: 1; }
+ListView:focus { border: double $accent; }
+ListView:focus > ListItem.-highlight { background: $accent; color: $background; text-style: bold; }
+ListItem.-highlight { text-style: bold; border-left: thick $accent; }
+.row-title { text-style: bold; }
+.row-id, .muted { color: $muted; }
+#status { height: auto; min-height: 1; margin: 1 0; }
+.error { color: $error; text-style: bold; }
+#summary, #details, #help-text { height: auto; padding: 1 0; }
+Footer { background: $surface; }
+ConfirmScreen, ReadErrorScreen { align: center middle; background: #000000 65%; }
+#dialog { width: 90%; max-width: 76; height: auto; max-height: 90%; padding: 1 2; background: $surface; border: double $accent; }
+.dialog-title { text-style: bold; padding-bottom: 1; }
+HomeScreen #content { padding: 0 2; }
+HomeScreen #summary { padding: 0; }
+HomeScreen #status { margin: 0; }
+HomeScreen #menu { margin: 0; height: 12; }
+
+.actions { height: 3; margin: 0 0 1 0; }
+.actions Button { width: 1fr; min-width: 10; margin: 0 1 0 0; }
+RecordsScreen Label { margin: 0; }
+RecordsScreen Input { margin: 0; }
+RecordsScreen #status { margin: 0; }
+
+VerticalScroll:focus { border: double $accent; }
+
+ListView:focus > ListItem.-highlight .muted, ListView:focus > ListItem.-highlight .row-id { color: $background; }
+
+#detail-actions { margin: 0 2; }
+DetailScreen #status { margin: 0 2; min-height: 0; }
+
+FormScreen #status { margin: 0 2; min-height: 0; }

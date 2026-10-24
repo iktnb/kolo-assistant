@@ -1,0 +1,78 @@
+spec_id: keyboard-tui
+title: "Коло: повноекранний український термінальний інтерфейс"
+rfc_ref: 01-RFC.md
+acceptance_criteria:
+  - id: TUI-AC-01
+    description: "TTY menu/demo відкривають Home з counts, birthdays7 і п'ятьма діями; Up/Down/Enter працюють; видимі focus/hints. Non-TTY menu/demo=2 до даних; --line-mode явно старий режим; --plain лише без кольору."
+  - id: TUI-AC-02
+    description: "Рядок -> деталі без typed ID; duplicates розрізняє secondary+ID; Back відновлює query/tag/sort/ID/scroll/focus. Save вибирає saved ID у фільтрі, delete — сусіда; hidden/empty selection не відкривається."
+  - id: TUI-AC-03
+    description: "Tab/Shift+Tab досягають усіх видимих дій. Input/TextArea стрілки редагують; TextArea Enter вставляє newline, Tab переходить далі; жодна літера чи Enter поля не виконує небажану дію."
+  - id: TUI-AC-04
+    description: "Контакт CRUD через список/деталі/форму; підписи+prefill, кілька телефонів, optional clear; базові AC02-05 незмінні; success лише після commit, повторний CLI читає ті самі ID/значення."
+  - id: TUI-AC-05
+    description: "Нотатка CRUD, lossless existing mixed LF/CRLF/CR and Unicode/trailing separators via raw-span projection, new Enter=LF, body до10000; окремий tags-per-line editor, clear та domain normalization; незмінені історичні casefold-теги не перевалідуються як нові; persistence після restart."
+  - id: TUI-AC-06
+    description: "Apply пошуку contacts; notes query AND exact tag з title/tags sort через Assistant; clear повертає все; empty-store й no-match різні; новий query не відкриває hidden old ID."
+  - id: TUI-AC-07
+    description: "Days 0..366 apply, row відкриває контакт; порядок/сьогодні/leap/year-boundary через чинний календар; invalid raw лишається, старі results явно позначені previous applied interval; зміна дня refresh."
+  - id: TUI-AC-08
+    description: "FieldError focus у field, усі інші raw draft лишаються; failed write без success/partial DB, explicit retry. Read error має absolute path/retry/back/quit без reset; popup відновлює focus."
+  - id: TUI-AC-09
+    description: "Delete modal label+type+ID default keep; default Enter/Esc без mutation. Dirty Back/quit/Ctrl+C default continue editing; clean exit confirm; Home Esc confirm. Confirmed exit0, terminal restored; pending write не скасовується потай."
+  - id: TUI-AC-10
+    description: "120x36/80x24/60x20: Home/empty+filled list/detail/form/error/confirm з visible focus, reachable actions і scroll; long Unicode/body10000, controls/markup literal; resize dirty form зберігає draft."
+  - id: TUI-AC-11
+    description: "SQLite v1/IDs без migration, CLI<->TUI reread; demo banner/path і temporary seed/cleanup/reseed без personal path access; demo+data-dir=2. Усі старі assertions, Pilot keys, default PTY, wheel/install/README перевірені."
+api_contracts: []
+event_contracts: []
+data_model_changes: {postgres: [], opensearch: [], redis: [], aerospike: []}
+cli_contracts:
+  default: "kolo / kolo demo: TTY Textual, no TTY code2; reject demo+explicit data-dir before filesystem"
+  line_mode: "global --line-mode before command preserves current numeric menu/demo; scriptable CLI unchanged; exclude line_mode from _prepare edit-field detection"
+  plain: "--plain or NO_COLOR -> public get_line_filters adds textual.filter.NoColor after super filters; no colors, visible bold/reverse/shape focus; TUI still emits screen-control sequences"
+  exits: "TUI confirmed quit0; startup CLI argument errors2; scriptable input2/storage1/interrupt130 unchanged; TUI read failures recover inside app"
+  data: "Assistant/Store/validation API, SQLite1, XDG/explicit directory semantics unchanged"
+tui_contracts:
+  modules: ["src/kolo/tui.py", "src/kolo/tui_screens.py", "src/kolo/tui_forms.py", "src/kolo/tui.tcss"]
+  screens: "Home -> Contacts|Notes|Birthdays|Help; list -> Detail(id) -> Edit; contacts/notes list -> Add; save/delete return to origin list"
+  context: ["kind", "query", "tag", "sort", "raw_days", "applied_days", "selected_id", "selected_index", "scroll", "focus_id"]
+  initial_focus: "Home first menu row; populated list selected/first row; empty contacts/notes Add; empty birthdays days; details Edit; form first field; confirmation safe option"
+  restore: "Refresh on resume, retain controls and scroll; saved ID if matching else explanatory status+nearest visible; delete index=min(old,last); missing focus fallback list/Add/days"
+  filters: "Inputs+Apply button; Enter in search applies query only; native Select controls sort; clear whitespace tag -> None; empty query -> all; generation invalidates hidden selection immediately"
+  list_row: "safe primary label + secondary(phone/email or tags/preview) + immutable full ID; wrapping/scrolling; ListView Enter only if selected_id belongs to current rendered results"
+  contact_form: "name Input; phones TextArea one per nonblank line; address/email/birthday Input; labels/limits shown; empty optional -> None or (); birthday YYYY-MM-DD; no typed ID"
+  note_form: "title Input; body TextArea loads canonical LF projection with original raw body/span map retained; tags TextArea one nonblank tag/line; empty tags -> (); unchanged fields UNSET, changed fields domain validated"
+  body_projection: "Retain raw_original, canonical_original and raw span per canonical code point; canonicalize CRLF atomically and CR/LF/VT/FF/FS/GS/RS/NEL/U+2028/U+2029 to LF before widget load, including final/repeated separators; no trimming/other Unicode normalization. Snapshot widget_initial after load."
+  body_save: "If canonical current == canonical widget_initial, existing body UNSET. Else SequenceMatcher(None, canonical_original, canonical_current, autojunk=False): equal emits original raw spans, delete emits nothing, insert/replace emits canonical current substring with LF new breaks. Repeated-text alignment follows deterministic SequenceMatcher earliest-original then earliest-new tie rule. New note breaks LF."
+  body_worker: "Project copied widget snapshot in serialized worker before Assistant; no private Textual APIs. Domain10000 limit applies to reconstructed raw body, not canonical length; failure retains widget draft and raw map."
+  dirty: "Compare widgets to initialized widget snapshots, body in canonical LF space; never compare widget text to raw stored body. No-key open/cancel clean, title-only save body UNSET; Back/Esc dirty -> Continue(default)/Discard; explicit Save only."
+  keys: "Native focused-widget Up/Down/Enter; Tab/Shift+Tab visible controls, TextArea tab-to-focus; no global printable/arrow/Enter bindings; Esc dismiss popup first; Ctrl+Q/Ctrl+C shared guarded exit"
+  confirmations: "Delete Keep(default)/Delete with safe displayed type+label+ID; exit Stay(default)/Exit; dirty exit Continue(default)/Discard and exit; Esc=default, Enter only focused choice"
+  io: "Factory initializes Assistant/Store inside one serialized asyncio.to_thread operation; each connection lifecycle stays in thread; only event loop updates widgets"
+  pending: "Set busy before dispatch; no duplicate operations; stale read generation ignored, latest requested read runs next; no navigation/exit or cancellation during write until outcome, then requested safe flow"
+  write_outcome: "Only Assistant-return after commit = saved; FieldError maps Ukrainian field to widget without draft loss; StorageError retains draft and allows explicit retry; committed write+refresh error cannot replay mutation"
+  read_failure: "Show safe absolute path/reason; Retry same load, Back previous screen, Quit guarded; startup Back -> safe unavailable Home. Stale data labelled Not refreshed and mutation disabled; never initialize replacement for corrupt DB"
+  missing_id: "Explain InputError; return to refreshed origin list, no mutation"
+  clock: "One injected assistant.today snapshot per refresh; reuse for dashboard contacts/birthdays; resume/apply refresh; 60s timer compares today and refreshes visible Home/Birthdays on day change without changing draft"
+  layout: "Common semantic theme; one scrollable content area, wrapped rows/fields; header/footer concise; focus scrolls into view; buttons remain keyboard reachable at60x20; modal content scrolls if needed"
+  safe_display: "render.safe Text for untrusted read-only labels/IDs/path/rows/details/errors; no markup interpolation. Editors retain original raw values separately and use canonical body projection; controls never execute, untouched original separators roundtrip; never save escaped display over raw model"
+  demo: "run_demo owns temp directory through all work and app exit, existing seed; no personal data_directory; persistent Demo+path banner; explicit line_mode selects legacy shell"
+non_functional_requirements:
+  - type: responsiveness
+    requirement: "SQLite timeout3s must not block event-loop focus/status processing; I/O serialized and write lifetime awaited on exit."
+    measurement_method: "Pilot with event-blocked service: process a UI heartbeat/key while worker blocked; release, assert single commit and deferred safe exit."
+  - type: compatibility
+    requirement: "All original assertions pass; no source coverage exclusions, overall >=80%, report change against95.33% baseline."
+    measurement_method: "Full configured pytest/coverage plus subprocess/PTY; strict mypy src+tests, full Ruff, Bandit, all-lock-groups audit."
+  - type: offline
+    requirement: "No runtime network; only temporary test/demo data; no personal path resolution in demo."
+    measurement_method: "Existing offline fixture + subprocess isolation sentinels and seed/cleanup tests; exercise default TUI."
+  - type: terminal_usability
+    requirement: "All required states usable at120x36,80x24,60x20 and after resize, including no-color focus."
+    measurement_method: "Pilot key traversal/viewport assertions + inspect rendered evidence for each size; PTY verifies actual TTY startup, key exit, restored terminal."
+deployment_changes:
+  - service: personal-assistant
+    change: dependency_and_local_package_update
+    notes: "Pin compatible audited Textual in pyproject+uv.lock (PyPI8.2.8 candidate); retain Rich constraints; version1.1.0 in pyproject/__init__; include TCSS in wheel, test installed package from other cwd; no server/deploy."
+out_of_scope: ["browser/web/server", "schema migration/domain changes", "new business features", "network/sync", "personal-data tests", "GitLab/commit/push/publication"]

@@ -1,0 +1,210 @@
+spec_id: kolo-personal-assistant-v1
+title: 'Коло: локальні контакти, нотатки й дні народження'
+rfc_ref: 01-RFC.md
+service: personal-assistant
+status: proposed
+runtime:
+  python: '>=3.12,<3.13'
+  dependencies: [rich]
+  cli_parser: argparse
+  package: src/kolo
+  console_script: 'kolo = kolo.cli:main'
+  module_script: python -m kolo
+  build_backend: hatchling
+  lockfile: uv.lock
+  development_dependencies: [ruff, mypy, pytest, pytest-cov, bandit, pip-audit]
+  network: 'Жодних мережевих операцій runtime; sync та dependency audit можуть потребувати мережі.'
+
+calendar:
+  timezone: 'Europe/Kyiv за замовчуванням; непорожній KOLO_TIMEZONE задає IANA ZoneInfo, порожній = default. Невідома зона -> input error 2 до відкриття storage; help/version її не потребують. ОС timezone не змінювати.'
+  clock: 'Ін’єктований callable повертає aware datetime; production datetime.now(UTC). today=clock().astimezone(zone).date(), один snapshot на доменну операцію/оновлення панелі. Один today для birthday validation, календаря й demo fixtures.'
+  assertion: '2026-10-23T22:30:00Z -> 2026-10-24 у Europe/Kyiv; KOLO_TIMEZONE=UTC -> 2026-10-23.'
+
+acceptance_criteria:
+  - id: AC-01
+    description: 'Новий TTY-запуск показує українську панель, 0 контактів/нотаток, дні народження за 7 днів і дії 1/2/3/4/0; невідомий вибір не завершує меню.'
+  - id: AC-02
+    description: 'Контакт лише з ім’ям і контакт з усіма полями мають різні стабільні ID; дублікати імен/реквізитів між контактами дозволено; після нового процесу всі поля ті самі.'
+  - id: AC-03
+    description: 'Недопустимі або завеликі поля й повтор телефона відхиляються без часткової зміни; форма повторює тільки помилкове поле й зберігає решту чернетки.'
+  - id: AC-04
+    description: 'Пошук за ім’ям/адресою/email використовує casefold, телефонний — цифри; порожній запит показує всіх; edit зберігає ID, пропущені поля й явно очищує необов’язкові.'
+  - id: AC-05
+    description: 'Видалення у формі вимагає явного підтвердження, CLI — --yes; без підтвердження дані незмінні; невідомий ID дає 2 без зміни решти.'
+  - id: AC-06
+    description: 'birthdays N=0..366 включає today і today+N, один найближчий випадок/контакт; 2026-12-30,N=3 включає 01-02, виключає 01-03; сортування дата/name.casefold/ID.'
+  - id: AC-07
+    description: '29 лютого святкується 28 лютого у звичайному році, 29 у високосному; 2025-02-28,N=0 включає; 2028-02-28,N=0 виключає,N=1 включає; оригінальна дата незмінна.'
+  - id: AC-08
+    description: 'Нотатки підтримують CRUD, дублікати заголовків, стабільні ID, Unicode/переноси; недопустимий edit не змінює жодного поля.'
+  - id: AC-09
+    description: 'Пошук title/body через casefold і точний нормалізований tag об’єднані AND; теги очищуються; tags sort використовує кортеж тегів/title.casefold/ID, нетеговані останні.'
+  - id: AC-10
+    description: 'Ctrl+C у будь-якій формі/підтвердженні повертає до меню без запису; EOF завершує інтерактивний сеанс 0; звичайний вихід 0.'
+  - id: AC-11
+    description: 'Успіх лише після commit; інший процес/інший cwd читає ті самі ID/поля; --data-dir не читає й не змінює стандартне сховище.'
+  - id: AC-12
+    description: 'Read/write/permission/corrupt/unknown-version помилки дають українську діагностику шляху без reset; невдалий запис відкотиться, попередні дані перечитуються; пошкоджений файл байт-у-байт незмінний.'
+  - id: AC-13
+    description: 'CRUD/пошук/теги/календар доступні командами без TTY; помилкові аргументи дають 2; stdout успіх, stderr помилка; redirected output без ANSI; усі рівні --help українською.'
+  - id: AC-14
+    description: 'demo у TTY працює лише у новому TemporaryDirectory з вигаданими прикладами й найближчим birthday, показує шлях/Демонстрація; повторний demo починає спочатку; demo + --data-dir дає 2.'
+  - id: AC-15
+    description: '60/80/120 колонок: повні ID, доступ до повних деталей, придатні меню/форми/таблиці; markup показано буквально, ESC/control не виконуються; кольори мають текстову пару.'
+  - id: AC-16
+    description: 'Український README і run.sh відповідають реалізації; uv sync, uv run kolo --help і PTY-demo перевірені у WSL; якщо tool встановлено, перевірений абсолютний kolo; PASS відокремлено від NOT RUN.'
+
+api_contracts: []
+event_contracts: []
+contract_not_applicable: 'HTTP, Kafka, зовнішня авторизація й мережеві протоколи відсутні.'
+cli_contract:
+  grammar: 'kolo [--data-dir PATH] [--plain] COMMAND; без COMMAND — меню тільки за stdin/stdout TTY.'
+  global:
+    data_dir: 'Опція перед COMMAND; непорожній PATH, expanduser та absolute; явно передану опцію пам’ятати для заборони demo.'
+    plain: 'Без кольору/ANSI; також автоматично за NO_COLOR або не-TTY потоку.'
+    help: 'kolo --help та --help кожної групи/дії: український опис, опції, приклад; не відкривати сховище.'
+    version: 'kolo --version показує версію пакета, без доступу до сховища.'
+  contacts:
+    - command: 'contacts list [--search TEXT]'
+      behavior: 'Типово всі; порядок name.casefold(), ID; порожній розділ і 0 збігів — різні повідомлення.'
+    - command: 'contacts show ID'
+      behavior: 'Усі поля, повний ID, усі телефони; відсутній optional — текст «Не вказано».'
+    - command: 'contacts add --name NAME [--phone PHONE ...] [--address TEXT] [--email EMAIL] [--birthday YYYY-MM-DD]'
+      behavior: '--phone повторюється; відсутні optional — None/порожній tuple.'
+    - command: 'contacts edit ID [--name NAME] [--phone PHONE ... | --clear-phones] [--address TEXT | --clear-address] [--email EMAIL | --clear-email] [--birthday DATE | --clear-birthday]'
+      behavior: 'Принаймні одне поле/clear обов’язкове. Пропущене незмінне. phone замінює весь список. value+clear того самого поля — 2. Порожні address/email/birthday очищують; порожній name/phone помилковий.'
+    - command: 'contacts delete ID --yes'
+      behavior: 'Без --yes код 2, без запиту stdin і без запису.'
+  notes:
+    - command: 'notes list [--search TEXT] [--tag TAG] [--sort title|tags]'
+      behavior: 'Типово sort=title. Один --tag, точна відповідність нормалізованому тегу. Порожній tag помилковий; порожній search — усі.'
+    - command: 'notes show ID'
+      behavior: 'Повний ID, заголовок, увесь текст зі збереженням рядків і всі теги.'
+    - command: 'notes add --title TITLE (--body TEXT | --body-file PATH) [--tag TAG ...]'
+      behavior: 'Рівно одне джерело body. --body-file UTF-8; PATH=- явно читає весь stdin без prompt. Непридатний файл/UTF-8 — помилка вводу 2 до відкриття транзакції.'
+    - command: 'notes edit ID [--title TITLE] [--body TEXT | --body-file PATH] [--tag TAG ... | --clear-tags]'
+      behavior: 'Принаймні одне поле/clear; відсутнє незмінне; tag замінює весь набір; tag+clear — 2.'
+    - command: 'notes delete ID --yes'
+      behavior: 'Такі самі правила ID/підтвердження, як у contacts.'
+  birthdays:
+    command: 'birthdays [--days N]'
+    default_days: 7
+    validation: 'Тільки ціле число 0..366; від’ємне, дробове, нечислове, >366 — 2.'
+    output: 'Повний contact ID, name, YYYY-MM-DD найближчої річниці, days_until; відсутні birthdays мають окремий порожній стан.'
+  demo:
+    command: demo
+    behavior: 'Лише за stdin/stdout TTY; reject явного --data-dir до будь-якого filesystem доступу; не вирішувати стандартний data-dir.'
+  execution:
+    no_tty: 'Без COMMAND або demo — 2 з українською підказкою командного режиму, без очікування вводу. Інші команди не ставлять запитань незалежно від TTY.'
+    output: 'Успіх/списки/деталі stdout; помилки stderr. Після add/edit: «Збережено контакт ID.» / «Збережено нотатку ID.»; delete: «Видалено … ID.». Без traceback для очікуваних помилок.'
+    parser_errors: 'Українське «Помилка вводу», конкретна підказка або команда --help; не показувати англійський внутрішній текст argparse.'
+    exit_codes: {success: 0, storage_failure: 1, invalid_input_or_missing_id_or_unconfirmed_delete: 2, command_keyboard_interrupt: 130}
+
+models:
+  id:
+    contact_pattern: '^c_[0-9a-f]{12}$'
+    note_pattern: '^n_[0-9a-f]{12}$'
+    creation: 'uuid4().hex[:12] з префіксом; PK перевіряє колізію, повторити до 5 разів; вичерпання — storage error, без вставки. ID не редагується; повний точний збіг, без prefix/name lookup.'
+  contact:
+    fields: {id: str, name: str, phones: 'tuple[str, ...]', address: 'str | None', email: 'str | None', birthday: 'date | None'}
+    name: 'Unicode strip, 1..120 codepoints; однакові імена дозволено.'
+    address: 'Unicode strip, порожнє -> None, <=500 codepoints.'
+    phone: 'Вилучити тільки ASCII space, (, ), -. Залишок: optional один leading + та 10..15 ASCII цифр. Без tabs/інших символів. Зберігати цей залишок; дублікати всередині контакту порівнювати за цифрами без +; порядок вводу зберігати.'
+    email: 'Unicode strip, порожнє -> None. <=254 ASCII символи; рівно один @. Local 1..64 з A-Za-z0-9._%+-, без крайніх/сусідніх крапок. Domain >=2 непорожні dot-labels; кожна з A-Za-z0-9 та лише внутрішніх дефісів. DNS не перевіряти; регістр зберігати.'
+    birthday: 'Порожнє -> None, інакше рівно YYYY-MM-DD, справжня date, <=today за локальною датою.'
+  note:
+    fields: {id: str, title: str, body: str, tags: 'tuple[str, ...]'}
+    title: 'Unicode strip, 1..120 codepoints; дублікати дозволено.'
+    body: 'Оригінальний Unicode-текст 1..10000 codepoints; body.strip() непорожній; не обрізати й не змінювати newlines.'
+    tags: 'Кожен вхідний елемент Unicode strip; порожні відкинути; довжина непорожнього до casefold 1..40 codepoints. Далі casefold, deduplicate і sorted; без NFC/видалення внутрішніх пробілів. Casefold може розширити збережений тег до 120 codepoints. Кома — допустима частина тегу.'
+  search:
+    contacts: 'q=query.strip(); name/address/email містять q.casefold(). OR телефон: q після вилучення ASCII space, (, ), - та optional leading + є >=1 ASCII цифрою; шукати підрядок цифр у телефонах. q порожній -> усі.'
+    notes: 'q=query.strip().casefold() у title/body; AND точний strip().casefold() tag, якщо заданий. Порядок title: (title.casefold(),id); tags: (not bool(tags), tuple(sorted(tags)), title.casefold(),id).'
+  birthday_algorithm: 'Для кожного контакту з birthday побудувати річницю в today.year, 02-29 замінити 02-28 лише якщо цей рік невисокосний. Якщо candidate<today — наступний рік з тим самим правилом. Включити, якщо 0<=candidate-today<=N. Порядок (candidate,name.casefold(),id); без вихідних/перенесення на робочий день. Date provider ін’єктується в тести.'
+
+data_model_changes:
+  postgres: []
+  opensearch: []
+  redis: []
+  aerospike: []
+  sqlite:
+    - file: kolo.sqlite3
+      change: 'Нове локальне авторитетне сховище, 4 таблиці; даних попереднього формату немає.'
+      migration_id: initial-v1
+      reversible: true
+      rollback: 'Відкат програми зберігає файл. Стирати лише власну тестову/демо-базу; особисту базу не видаляти автоматично. Downgrade/міграцій старих версій немає.'
+      ddl: |
+        PRAGMA application_id = 0x4B4F4C4F;
+        PRAGMA user_version = 1;
+        CREATE TABLE contacts (
+          id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL,
+          address TEXT, email TEXT, birthday TEXT
+        );
+        CREATE TABLE contact_phones (
+          contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+          position INTEGER NOT NULL CHECK(position >= 0),
+          phone TEXT NOT NULL, digits TEXT NOT NULL,
+          PRIMARY KEY(contact_id, position), UNIQUE(contact_id, digits)
+        );
+        CREATE TABLE notes (
+          id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL
+        );
+        CREATE TABLE note_tags (
+          note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+          tag TEXT NOT NULL, PRIMARY KEY(note_id, tag)
+        );
+      constraints: 'Повні доменні правила перевіряє application layer до SQL, і при читанні наявної бази. contact_phones.positions неперервні 0..n-1; digits відповідає phone без +. Stored tag = strip().casefold(), 1..120; сутності не мають orphan/невалідних полів. Лише PK/UNIQUE/FK-індекси.'
+storage:
+  paths: 'Явний --data-dir; інакше непорожній абсолютний XDG_DATA_HOME/kolo; інакше ~/.local/share/kolo. Відносний XDG ігнорувати. Path.expanduser().absolute()/resolve(strict=False); не залежати від cwd після старту. Не читати .env.'
+  initialization: 'Лише за відсутнього kolo.sqlite3; власні нові каталоги 0700. mkstemp створює private випадковий .kolo-init-* файл 0600 у тому самому data-dir. DDL/application_id/user_version виконати в ньому однією транзакцією з DELETE/FULL, COMMIT, close SQLite, fsync temp. Лише завершений файл опублікувати atomic no-clobber os.link(temp, final); fsync data-dir, unlink власного temp, fsync data-dir до успіху. Не відкривати final для initialization і ніколи не os.replace поверх final. FileExistsError або unsupported link/fsync -> storage error1 без перезапису final. Handled failure прибирає лише створений цим викликом private temp/journal; наявні файли/права батьків не скидати.'
+  initialization_crash: 'Crash до першого commit або між commit і link лишає final відсутнім; наступний звичайний startup ігнорує залишкові .kolo-init-* та їх journal, створює інший temp і публікує валідну порожню v1. Crash після link лишає повністю committed final; startup відкриває його за звичайними перевірками. Автосканування/видалення старих temp немає. Невідомий існуючий final не ремонтувати й не замінювати.'
+  open_existing: 'Спершу URI mode=ro з коректним quoting шляху: перевірити application_id/user_version, назви таблиць/колонки/PK/FK/UNIQUE, quick_check=ok, foreign_key_check порожній, матеріалізовані сутності валідні. Виняток native recovery описано нижче; інакше невідповідність, zero-byte, corrupt або version!=1 -> storage error без writable-відкриття/перезапису. Лише після повних перевірок normal writable connect.'
+  hot_rollback: 'Тільки якщо mode=ro повернув sqlite_errorcode=SQLITE_READONLY_ROLLBACK (776), перевірити raw SQLite header: 100 bytes, SQLite format 3 signature, big-endian user_version=1 at offset60, application_id=0x4B4F4C4F at offset68. Лише тоді mode=rw (не mode=rwc), читання для штатного SQLite rollback, close й повторна повна mode=ro validation. Без власного парсингу/ремонту journal, DDL, reset або replacement. Якщо native recovery/validation не вдалося -> code1. Не знищувати оригінал/journal вручну. SQLite може змінити recognized DB/journal лише задля rollback останньої incomplete transaction; вимога byte-identical corrupt fixtures стосується випадків поза цим вузьким recovery exception.'
+  connection: 'foreign_keys=ON, journal_mode=DELETE, synchronous=FULL, busy_timeout=3000; явний BEGIN IMMEDIATE на мутацію. Не використовувати WAL/фоновий процес.'
+  mutations: 'Load existing всередині транзакції -> merge повного candidate -> validate -> parameter-bound SQL -> commit. Усі діти й parent атомарні; exception -> rollback/close. Повідомлення успіху й повернення нового об’єкта лише після commit. Після failure не залишати cache із candidate.'
+  reads: 'Параметризований SQL; завантажені типізовані сутності; Unicode filter/sort у Python. Відсутній ID — user error 2, не storage failure.'
+  failures: 'Expected sqlite3/OSError -> український StorageError із абсолютним шляхом і без приватних полів/SQL/traceback; code1. Locked після 3s також code1 без неявних нескінченних retry. Corrupt/unknown file поза recognized hot_rollback exception byte-for-byte незмінний. Journal recovery SQLite забезпечує атомарність при перериванні процесу в межах справної FS; несправний диск/fsync поза гарантією.'
+
+interactive_contract:
+  dashboard: 'Заголовок Коло, counts, birthdays 7 days, числові дії Контакти/Нотатки/Дні народження/Довідка/Вийти. Повернення після кожної завершеної/скасованої операції; невідомий пункт — підказка.'
+  submenus: 'Список, пошук, додати, деталі за ID, редагувати за ID, видалити за ID, назад; порожній список підказує додавання, пошук без збігів — «Нічого не знайдено».'
+  forms: 'Перед формою: Ctrl+C скасовує, EOF виходить. Валідувати поле на вводі, повторювати тільки його. Edit Enter=залишити, !clear=очистити optional, початкове !! знімає один ! для буквального значення. Порожній clear для обов’язкового — помилка. Phones вводяться одним полем із роздільником ; (він недопустимий у самому телефоні). Теги вводити по одному рядку, порожній завершує; у edit перший Enter залишає теги, !clear очищує; кома всередині тегу буквальна.'
+  multiline: 'Створення body: рядки до окремого .; рядок із початковими .. втрачає одну початкову крапку; об’єднати через LF, terminator не включати. Edit спершу «Змінити текст? [т/Н]»; лише т/так/y/yes починають новий body. Це дозволяє початкові/кінцеві порожні рядки. Після невалідного body повторювати body, інші поля чернетки збережені.'
+  delete_confirmation: 'Показати повний ID і безпечне ім’я/заголовок. Тільки casefold/strip т, так, y, yes підтверджують; Enter/решта скасовують без запису.'
+  cancellation: 'Ctrl+C у формі/підтвердженні/меню очищує лише незбережену чернетку й повертає до панелі. EOF з будь-якого prompt завершує сеанс 0, без збереження чернетки. Expected field errors лишають форму, storage error повідомляється без успіху; невідновна помилка початкового відкриття завершує 1.'
+rendering:
+  palette: 'Спільна Rich Theme: один navigation accent, muted, success, error; усі стани з текстом; без заставок/пауз/clear-screen.'
+  safety: 'Усі user/path/query/error-derived strings через один sanitizer і rich.text.Text, ніколи markup/highlight. Unicode Cc/Cf відображати як видимі escapes, зокрема ESC -> literal \\x1b; у multiline дозволити LF, tab розгорнути до spaces. У single-line newline теж visible escape. Ніколи не виконувати OSC/CSI/bidi controls; оригінал зберігати без змін.'
+  widths: 'Ширина <80: компактні картки або ID+ім’я/заголовок, повний ID без truncation. 80..119: ID/ім’я/головний телефон або теги. >=120: додаткові email/уривок. Деталі завжди переносять повні значення. Меню/help/prompt переносити за Console.width; жодної втрати доступу до поля.'
+  streams: 'Окремі Console(stdout/stderr); force_terminal=False, color_system=None та без rich ANSI/style/control за non-TTY/--plain/NO_COLOR. Вихідні рядки не містять raw ESC із даних.'
+demo:
+  directory: 'tempfile.TemporaryDirectory(prefix="kolo-demo-"); repository отримує його явно, без resolve особистого шляху. Cleanup на нормальний вихід/Ctrl+C/EOF; залишки після kill не є особистими даними.'
+  fixtures: 'Вигадані українські люди, адреси example.com, телефони 10..15 цифр, нотатки/теги; один birthday = today.replace(year=min(2000, today.year)) із snapshot clock. 2000 високосний, для today раніше 2000 лишається today; дата завжди valid <=today, найближча річниця today і days_until=0. За today=2028-02-29 birthday=2000-02-29. Жодних реальних даних; особистий data-dir не визначати/читати.'
+  banner: 'Демонстрація · тимчасові дані · абсолютний шлях; усі зміни тільки тут; наступний запуск з новими fixtures.'
+
+non_functional_requirements:
+  - type: offline_privacy
+    requirement: 'Runtime не робить мережевих запитів і не читає сторонні/стандартні дані в isolated/demo режимах.'
+    measurement_method: 'Тести забороняють socket connect, HOME/XDG sentinel fingerprint до/після, subprocess із tmp data-dir.'
+  - type: reliability
+    requirement: 'Успішна транзакція видима новому процесу; помилковий multi-field edit/SQL failure не приймає partial state.'
+    measurement_method: 'SQLite integration + injected failure між parent/child write і перед commit, reopen та compare попередніх сутностей; corrupt file hash незмінний.'
+  - type: usability
+    requirement: 'Основні шляхи клавіатурою; пер-field retry, Ctrl+C/EOF; 60/80/120 і literal markup/control.'
+    measurement_method: 'WSL stdlib pty subprocess з TIOCSWINSZ, bounded reads/timeouts, archived transcript/assertions; Rich render тести кожної ширини.'
+  - type: quality
+    requirement: 'Ruff format/lint, strict mypy усього Python repo включно з tests, full pytest, >=80% всього src/kolo, Bandit source, audit усіх locked runtime/dev deps.'
+    measurement_method: 'Точні команди 03-test-checklist.md, жодних blanket ignores/UI exclusions/skip failing tests. Непроведене required check — NOT RUN і блокує gate.'
+  - type: capacity
+    requirement: 'Очікувано ~1040 parent rows/<8MiB за 12 місяців; перевірити на 10000 синтетичних сутностях без жорсткого SLA.'
+    measurement_method: 'Записати фактичний disk size/час list-search на WSL; не називати оцінку виміряною.'
+deployment_changes:
+  - service: personal-assistant
+    change: new_local_package
+    notes: 'pyproject.toml + uv.lock, console entrypoint; ./run.sh працює з будь-якого cwd через uv run --no-sync --project. Опційний start-kolo.cmd відкриває цей repo в WSL. README українською; після QA controller виконує uv tool install --python 3.12 . і перевіряє /home/iknow/.local/bin/kolo. Немає remote/deploy/publication.'
+out_of_scope:
+  - 'Веб/сервер/cloud/LLM/синхронізація/мережеві runtime операції'
+  - 'Імпорт/експорт, background notification, encryption, secure physical erasure'
+  - 'Багатокористувацьке й одночасне спільне редагування, автоматичні schema upgrades'
+  - 'Автодоповнення, full-screen terminal UI, Jvers repos/services/доступ'
+  - 'Commit, push, GitLab, registry publication, deployment'
