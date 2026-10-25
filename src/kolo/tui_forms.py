@@ -52,6 +52,12 @@ class BodyProjection:
 
     def restore(self, current: str) -> str:
         canonical = self.from_raw(current).canonical
+        original = "".join(self.spans)
+        if canonical == self.canonical:
+            return original
+        # LF-only originals have no alternate separator spans to reconstruct.
+        if original == self.canonical:
+            return canonical
         result: list[str] = []
         matcher = SequenceMatcher(None, self.canonical, canonical, autojunk=False)
         for operation, old_start, old_end, new_start, new_end in matcher.get_opcodes():
